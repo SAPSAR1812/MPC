@@ -1,0 +1,294 @@
+%% Constants
+
+v1=3;
+v2=3;
+k1=3.33;
+k2=3.35;
+g1=0.7;
+g2=0.6;
+h1=12.4;
+h2=12.7;
+h3=1.8;
+h4=1.4;
+A1=28;
+A3=28;
+A2=32;
+A4=32;
+a1=0.071;
+a2=0.057;
+a4=0.057;
+a3=0.071;
+kc=1;
+g=981;
+T1=(A1/a1)*sqrt(2*h1/g);
+T2=(A2/a2)*sqrt(2*h2/g);
+T3=(A3/a3)*sqrt(2*h3/g);
+T4=(A4/a4)*sqrt(2*h4/g);
+%% Steady State values
+h1ss=(g1*k1*v1+(1-g2)*k2*v2)/(2*g*a1*a1);
+h2ss=(g2*k2*v2+(1-g1)*k1*v1)/(2*g*a2*a2);
+h3ss=(((1-g2)*k2*v2)^2)/(2*g*a3*a3);
+h4ss=(((1-g1)*k1*v1)^2)/(2*g*a4*a4);
+h1ss=12.26;
+h2ss=12.732;
+A=[-1/T1 0 A3/(A1*T3) 0;0 -1/T2 0 A4/(A2*T4);0 0 -1/T3 0;0 0 0 -1/T4];
+B=[g1*k1/A1 0;0 g2*k2/A2;0 (1-g2)*k2/A3;(1-g1)*k1/A4 0];
+C=[kc 0 0 0;0 kc 0 0];
+D=0;
+sys=ss(A,B,C,D);
+dis_sys=c2d(sys,0.1);
+Ad=dis_sys.A;
+Bd=dis_sys.B;
+Cd=dis_sys.C;
+Dd=0;
+E=open('Measurements.xlsx');
+data1=E.data;
+y1=data1(:,1)';
+y2=data1(:,2)';
+y=[y1;y2];
+%% Kalman Filter
+kc=0.5;
+C=[kc 0 0 0;0 kc 0 0];
+Pplusplot=0;
+Pminusplot=0;
+xprior=zeros(4,10001);
+xposterior=zeros(4,10001);
+xposterior(:,1)=[h1-h1ss+0.1*randn;h2-h2ss+0.1*randn;h3-h3ss+0.1*randn;h4-h4ss+0.1*randn];
+Q=0.001*eye(4);
+R=0.0001*eye(2);
+Pplus=100*eye(4);
+K1=[0];
+u=[0;0];
+for i=2:10001
+   xprior(:,i)=Ad*xposterior(:,i-1)+Bd*u;
+   Pminus=Ad*Pplus*Ad'+Q;
+   Pminusplot=[Pminusplot trace(Pminus)];
+   K=Pminus*C'/(C*Pminus*C'+R);
+   K1=[K1 sum(sum(K))];
+   xposterior(:,i)=xprior(:,i)+K*((y(:,i)-[h1ss;h2ss])./2-C*xprior(:,i));
+   Pplus=(eye(4)-K*C)*Pminus;
+   Pplusplot=[Pplusplot trace(Pplus)];
+   if(norm(xprior(:,i)-xposterior(:,i),2)<0.0000005)
+       break
+   end
+end
+x_estimated=(xposterior+[h1ss;h2ss;h3ss;h4ss]);
+%% Plots
+
+xprior=xprior+[h1ss;h2ss;h3ss;h4ss];
+% Xposterior
+figure;
+plot(1:length(x_estimated(1,:)),x_estimated(1,:),1:length(xprior(1,:)),xprior(1,:))
+xlabel('k')
+title('State 1')
+ylabel('x')
+legend('x_{posterior}','x_{prior}')
+figure;
+plot(1:length(x_estimated(1,:)),x_estimated(2,:),1:length(xprior(1,:)),xprior(2,:))
+xlabel('k')
+title('State 2')
+ylabel('x')
+legend('x_{posterior}','x_{prior}')
+figure;
+plot(1:length(x_estimated(1,:)),x_estimated(3,:),1:length(xprior(1,:)),xprior(3,:))
+xlabel('k')
+title('State 3')
+ylabel('x')
+legend('x_{posterior}','x_{prior}')
+figure;
+plot(1:length(x_estimated(1,:)),x_estimated(4,:),1:length(xprior(1,:)),xprior(4,:))
+xlabel('k')
+title('State 4')
+ylabel('x')
+legend('x_{posterior}','x_{prior}')
+
+% 
+figure;
+plot(1:10001,Pminusplot,1:10001,Pplusplot)
+xlabel('k')
+ylabel('Trace of Covariance matrix')
+title('Covariance vs time')
+legend('P^-','P^+')
+%
+figure;
+plot(1:10001,K1)
+title('Kalman Gain')
+xlabel('k')
+ylabel('Summation of values in K matrix')
+% 
+figure;
+plot(1:10001,data1(:,1:2)'-x_estimated(1:2,:))
+legend('State 1','State 2')
+title('Residuals')
+xlabel('k')
+ylabel('Residuals')
+%
+figure;
+plot(1:10001,data1(:,1:2)'-C*xprior)
+legend('State 1','State 2')
+title('Innovations')
+xlabel('k')
+ylabel('Innovations')
+
+%% PF
+
+x0=[h1;h2;h3;h4];
+x_post=x0;
+P0=10*eye(4);
+n=4;
+N=4000;
+L=chol(P0);
+x0=(x0*ones(1,N))'+randn(N,n)*L;
+x1_post=x0(:,1)';
+x2_post=x0(:,2)';
+x3_post=x0(:,3)';
+x4_post=x0(:,4)';
+C=[0.5 0 0 0;0 0.5 0 0];
+Q=100*eye(4);
+for t=1:10001
+
+w=chol(Q)*randn(n,N);
+w1=w(1,:);
+w2=w(2,:);
+w3=w(3,:);
+w4=w(4,:);
+
+x1_post=x1_post+w1;
+x2_post=x2_post+w2;
+x3_post=x3_post+w3;
+x4_post=x4_post+w4;
+
+for i=1:N
+    x1_pri(i)=x1_post(i)+0.1*((-a1/A1)*sqrt(2*g*x1_post(i))+(a3/A1)*sqrt(2*g*x3_post(i))+g1*k1*v1/A1)+0.1*randn;
+    x2_pri(i)=x2_post(i)+0.1*((-a2/A2)*sqrt(2*g*x2_post(i))+(a4/A2)*sqrt(2*g*x4_post(i))+g2*k1*v2/A2)+0.1*randn;
+    x3_pri(i)=x3_post(i)+0.1*((-a3/A3)*sqrt(2*g*x3_post(i))+(1-g2)*k2*v2/A3)+0.1*randn;
+    x4_pri(i)=x4_post(i)+0.1*((-a4/A4)*sqrt(2*g*x4_post(i))+(1-g1)*k1*v1/A4)+0.1*randn ;
+end
+
+x1_pri=abs(x1_pri);
+x2_pri=abs(x2_pri);
+x3_pri=abs(x3_pri);
+x4_pri=abs(x4_pri);
+x_pri=[x1_pri;x2_pri;x3_pri;x4_pri];
+z1=data1(t,1);
+z2=data1(t,1);
+z=[z1;z2];
+z_true=z*ones(1,N);
+R=100*eye(2);
+z_est=C*x_pri;
+v=abs(z_true-z_est);
+for i=1:N
+    q(i)=exp(-0.5*(v(:,i)'*inv(R)*v(:,i)));
+end
+
+for i=1:N
+    wt(i)=q(i)/sum(q);
+end
+
+M=length(wt);
+Q1=cumsum(wt);
+indx=zeros(1,N);
+T=linspace(0,1-1/N,N)+rand/N;
+i=1;
+j=1;
+while(i<=N && j<=M)
+    while(Q1(j)<T(i))
+        j=j+1;
+    end
+    indx(i)=j;
+    x1_post(i)=x1_pri(j);
+    x2_post(i)=x2_pri(j);
+    x3_post(i)=x3_pri(j);
+    x4_post(i)=x4_pri(j);
+    i=i+1;
+end
+x1_postest(t)=mean(x1_post);
+x2_postest(t)=mean(x2_post);
+x3_postest(t)=mean(x3_post);
+x4_postest(t)=mean(x4_post);
+x1_priest(t)=mean(x1_pri);
+x2_priest(t)=mean(x2_pri);
+x3_priest(t)=mean(x3_pri);
+x4_priest(t)=mean(x4_pri);
+x1_postvar(t)=var(x1_post);
+x2_postvar(t)=var(x2_post);
+x3_postvar(t)=var(x3_post);
+x4_postvar(t)=var(x4_post);
+x1_privar(t)=var(x1_pri);
+x2_privar(t)=var(x2_pri);
+x3_privar(t)=var(x3_pri);
+x4_privar(t)=var(x4_pri);
+end
+
+%% Plots
+
+
+% Xposterior
+figure;
+plot(1:10001,x1_postest,1:10001,x1_priest)
+xlabel('k')
+title('State 1')
+ylabel('x')
+legend('x_{posterior}','x_{prior}')
+figure;
+plot(1:10001,x2_postest,1:10001,x2_priest)
+xlabel('k')
+title('State 2')
+ylabel('x')
+legend('x_{posterior}','x_{prior}')
+figure;
+plot(1:10001,x3_postest,1:10001,x3_priest)
+xlabel('k')
+title('State 3')
+ylabel('x')
+legend('x_{posterior}','x_{prior}')
+
+figure;
+plot(1:10001,x4_postest,1:10001,x4_priest)
+xlabel('k')
+title('State 4')
+ylabel('x')
+legend('x_{posterior}','x_{prior}')
+
+plot(1:10001,x1_postvar+x2_postvar+x3_postvar+x4_postvar,1:10001,x1_privar+x2_privar+x3_privar+x4_privar)
+xlabel('k')
+ylabel('sum of covariances')
+title('Covariance')
+legend('P_{posterior}','P_{prior}')
+figure;
+plot(1:10001,data1(:,1:2)'-[x1_postest;x2_postest])
+legend('State 1','State 2')
+title('Residuals')
+xlabel('k')
+ylabel('Residuals')
+figure;
+plot(1:10001,data1(:,1:2)'-[x1_priest;x2_priest])
+legend('State 1','State 2')
+title('Innovations')
+xlabel('k')
+ylabel('Innovations')
+%% Comparison
+figure;
+plot(1:10001,data1)
+title('Measured values (True data)')
+xlabel('k')
+ylabel('z')
+legend('State 1','State 2','State 3','State 4')
+figure;
+plot(1:10001,x3_postest,1:10001,data1(:,3)',1:10001,x_estimated(3,:))
+title('State 3: Comparison')
+xlabel('k')
+ylabel('Estimates')
+legend('Particle Filter','True Values','Kalman Filter')
+figure;
+plot(1:10001,x4_postest,1:10001,data1(:,4)',1:10001,x_estimated(4,:))
+title('State 4: Comparison')
+xlabel('k')
+ylabel('Estimates')
+legend('Particle Filter','True Values','Kalman Filter')
+figure;
+plot(1:10001,x1_postvar+x2_postvar+x3_postvar+x4_postvar,1:10001,Pplusplot)
+title('Covariance Comparison')
+xlabel('k')
+ylabel('Sum of covariances')
+legend('Particle Filter','Kalman Filter')
